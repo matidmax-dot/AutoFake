@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Alerta Vehículo PRT</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style> body { background-color: #0f172a; color: #f8fafc; font-family: system-ui, sans-serif; } </style>
+</head>
+<body class="p-4 max-w-lg mx-auto">
+
+    <!-- Encabezado -->
+    <div class="bg-slate-800 p-4 rounded-2xl shadow-lg border border-slate-700 text-center mb-4">
+        <h1 class="text-xl font-bold text-amber-400">Alerta Vehículo PRT</h1>
+        <p class="text-xs text-slate-400">Historial Técnico & Detección de Fraude</p>
+    </div>
+
+    <!-- Buscador -->
+    <div class="bg-slate-800 p-4 rounded-2xl shadow-lg border border-slate-700 mb-4">
+        <div class="flex gap-2">
+            <input type="text" id="patenteInput" placeholder="Ingresa Patente (ej: PYCK65)" class="w-full bg-slate-900 border border-slate-700 text-white font-bold text-center text-lg p-3 rounded-xl uppercase tracking-widest focus:outline-none focus:border-amber-400">
+            <button onclick="buscarPatente()" class="bg-amber-500 text-slate-950 font-bold px-5 py-3 rounded-xl hover:bg-amber-400 transition">BUSCAR</button>
+        </div>
+    </div>
+
+    <!-- Resultados -->
+    <div id="resultados" class="hidden space-y-4">
+
+        <!-- Alerta Fraude -->
+        <div id="alertaFraude" class="hidden bg-red-950/80 border border-red-600 p-4 rounded-2xl text-red-200">
+            <h2 class="font-bold text-red-400 flex items-center gap-2 text-sm uppercase tracking-wide">
+                ⚠️ ALERTA DE ODÓMETRO / RIESGO DETECTADO
+            </h2>
+            <p id="alertaTexto" class="text-xs mt-2 leading-relaxed"></p>
+        </div>
+
+        <!-- Ficha Técnica con LOGO -->
+        <div class="bg-slate-800 p-4 rounded-2xl border border-slate-700 relative overflow-hidden">
+            <div class="flex justify-between items-start mb-3">
+                <div>
+                    <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Ficha Técnica del Vehículo</h3>
+                    <h2 id="vehiculoTitulo" class="text-xl font-bold text-white"></h2>
+                </div>
+                <!-- LOGO DE LA MARCA -->
+                <div id="logoContainer" class="bg-slate-900/80 p-2 rounded-xl border border-slate-700/80 flex items-center justify-center min-w-[52px] min-h-[52px]">
+                    <img id="marcaLogo" src="" alt="Logo Marca" class="w-10 h-10 object-contain" onerror="document.getElementById('logoContainer').style.display='none'">
+                </div>
+            </div>
+            
+            <div class="grid grid-cols-2 gap-3 text-xs">
+                <div class="bg-slate-900/60 p-2.5 rounded-xl">
+                    <span class="text-slate-400 block">N° Motor:</span>
+                    <strong id="numMotor" class="text-slate-200"></strong>
+                </div>
+                <div class="bg-slate-900/60 p-2.5 rounded-xl">
+                    <span class="text-slate-400 block">N° Chasis / VIN:</span>
+                    <strong id="numChasis" class="text-slate-200"></strong>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-3 gap-2 mt-3 text-center">
+                <div class="bg-slate-900/60 p-2 rounded-xl">
+                    <span id="cantAprobadas" class="block font-bold text-emerald-400 text-lg">0</span>
+                    <span class="text-[10px] text-slate-400">Aprobadas</span>
+                </div>
+                <div class="bg-slate-900/60 p-2 rounded-xl">
+                    <span id="cantRechazadas" class="block font-bold text-red-400 text-lg">0</span>
+                    <span class="text-[10px] text-slate-400">Rechazadas</span>
+                </div>
+                <div class="bg-slate-900/60 p-2 rounded-xl">
+                    <span id="tasaAprobacion" class="block font-bold text-cyan-400 text-lg">0%</span>
+                    <span class="text-[10px] text-slate-400">Tasa Aprobación</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Gráfico -->
+        <div class="bg-slate-800 p-4 rounded-2xl border border-slate-700">
+            <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Evolución del Kilometraje</h3>
+            <canvas id="kmChart" class="w-full max-h-48"></canvas>
+        </div>
+
+        <!-- Historial -->
+        <div class="bg-slate-800 p-4 rounded-2xl border border-slate-700">
+            <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Historial Detallado de Revisiones</h3>
+            <div id="listaRevisiones" class="space-y-3"></div>
+        </div>
+
+    </div>
+
+    <script>
+        let chartInstance = null;
+
+        function getLogoUrl(marca) {
+            if (!marca) return '';
+            let slug = marca.toLowerCase().trim()
+                .replace(/[\s\-_]+/g, '-')
+                .replace(/[^a-z0-9\-]/g, '');
+
+            if (slug.includes('mercedes')) slug = 'mercedes-benz';
+            if (slug.includes('great') && slug.includes('wall')) slug = 'great-wall';
+
+            return `https://raw.githubusercontent.com/filippofilip95/car-logos-dataset/master/logos/thumb/${slug}.png`;
+        }
+
+        async function buscarPatente() {
+            const patente = document.getElementById('patenteInput').value.trim();
+            if (!patente) return alert("Ingresa una patente válida");
+
+            const res = await fetch(`/api/buscar/${patente}`);
+            const data = await res.json();
+
+            if (data.error) {
+                alert("No se encontraron registros para esta patente.");
+                return;
+            }
+
+            document.getElementById('resultados').classList.remove('hidden');
+
+            const info = data.info_vehiculo;
+            document.getElementById('vehiculoTitulo').innerText = `${info.marca || ''} ${info.modelo || ''} ${info.ano ? '('+info.ano+')' : ''}`;
+            document.getElementById('numMotor').innerText = info.num_motor || 'N/A';
+            document.getElementById('numChasis').innerText = info.num_chasis || 'N/A';
+
+            const logoContainer = document.getElementById('logoContainer');
+            const imgLogo = document.getElementById('marcaLogo');
+            if (info.marca) {
+                logoContainer.style.display = 'flex';
+                imgLogo.src = getLogoUrl(info.marca);
+            } else {
+                logoContainer.style.display = 'none';
+            }
+
+            document.getElementById('cantAprobadas').innerText = data.aprobadas;
+            document.getElementById('cantRechazadas').innerText = data.rechazadas;
+            document.getElementById('tasaAprobacion').innerText = `${data.tasa_aprobacion}%`;
+
+            const alertaBox = document.getElementById('alertaFraude');
+            if (data.alertas && data.alertas.length > 0) {
+                alertaBox.classList.remove('hidden');
+                document.getElementById('alertaTexto').innerText = data.alertas[0].mensaje;
+            } else {
+                alertaBox.classList.add('hidden');
+            }
+
+            const lista = document.getElementById('listaRevisiones');
+            lista.innerHTML = '';
+            data.historial.forEach(rev => {
+                const item = document.createElement('div');
+                item.className = 'bg-slate-900/80 p-3 rounded-xl border border-slate-700/50 text-xs';
+                item.innerHTML = `
+                    <div class="flex justify-between items-center mb-1">
+                        <span class="px-2 py-0.5 rounded text-[10px] font-bold ${rev.resultado.includes('APROBADO') ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-red-500/20 text-red-400 border border-red-500/30'}">${rev.resultado}</span>
+                        <span class="text-slate-400">${rev.fecha} • Planta: ${rev.planta || 'PRT'}</span>
+                    </div>
+                    <div class="flex justify-between text-slate-300 font-semibold mt-1">
+                        <span>Certificado: ${rev.certificado || 'N/A'}</span>
+                        <span class="text-amber-400">${Number(rev.kilometraje).toLocaleString()} km</span>
+                    </div>
+                `;
+                lista.appendChild(item);
+            });
+
+            renderGrafico(data.historial);
+        }
+
+        function renderGrafico(historial) {
+            const ctx = document.getElementById('kmChart').getContext('2d');
+            const labels = historial.map(h => h.fecha);
+            const dataKm = historial.map(h => h.kilometraje);
+
+            if (chartInstance) chartInstance.destroy();
+
+            chartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Kilometraje',
+                        data: dataKm,
+                        borderColor: '#f59e0b',
+                        backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                        borderWidth: 3,
+                        tension: 0.3,
+                        fill: true,
+                        pointBackgroundColor: '#f59e0b'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { ticks: { color: '#94a3b8', font: { size: 9 } } },
+                        y: { ticks: { color: '#94a3b8', font: { size: 9 } } }
+                    }
+                }
+            });
+        }
+    </script>
+</body>
+</html>
